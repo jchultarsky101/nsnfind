@@ -1,4 +1,4 @@
-//! SOAP 1.1 support for the ILSmart services.
+//! SOAP 1.1 support for the upstream parts-availability backend.
 //!
 //! Each operation lives in its own submodule with its own request/response types
 //! and its own `build_request` / `parse_response` pair. Shared pieces — the

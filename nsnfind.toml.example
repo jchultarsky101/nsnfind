@@ -13,13 +13,13 @@
 #   4. $HOME/.config/nsnfind/config.toml
 
 [credentials]
-# Up to 10 alphanumeric chars ending in "U01" (per ILSmart SDK v4.1 § GetPartsAvailability).
+# Account user identifier: up to 10 alphanumeric chars, ending in "U01".
 user_id = "YOURUSRU01"
 # 6 to 20 characters, case-sensitive.
 password = "change-me"
 
 [api]
-# Service endpoint. Default below matches the public ILSmart SOAP 1.1 endpoint.
+# Upstream SOAP endpoint. Default below is the built-in backend.
 endpoint = "https://secure.ilsmart.com/services/v2/soap11"
 # Max concurrent in-flight requests (one part number per request).
 concurrency = 4
