@@ -1,0 +1,27 @@
+# nsnfind configuration template.
+#
+# Copy this file to `nsnfind.toml` (git-ignored) or to
+# `$HOME/.config/nsnfind/config.toml`, then fill in your credentials.
+# Alternatively, use the CLI to avoid leaking the password into shell history:
+#
+#     nsnfind config set --user-id ABCDEFU01 --password-stdin <<<'yourPassword'
+#
+# Precedence (highest first):
+#   1. --config <path>
+#   2. $NSNFIND_CONFIG
+#   3. ./nsnfind.toml
+#   4. $HOME/.config/nsnfind/config.toml
+
+[credentials]
+# Up to 10 alphanumeric chars ending in "U01" (per ILSmart SDK v4.1 § GetPartsAvailability).
+user_id = "YOURUSRU01"
+# 6 to 20 characters, case-sensitive.
+password = "change-me"
+
+[api]
+# Service endpoint. Default below matches the public ILSmart SOAP 1.1 endpoint.
+endpoint = "https://secure.ilsmart.com/services/v2/soap11"
+# Max concurrent in-flight requests (one part number per request).
+concurrency = 4
+# Per-request HTTP timeout in seconds.
+timeout_secs = 30

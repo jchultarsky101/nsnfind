@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Opt-in pre-commit hook. Enable with:
+#     git config core.hooksPath .githooks
+#
+# Runs fmt + clippy + tests before allowing a commit. If you need to bypass
+# (rare — fix the issue instead), use `git commit --no-verify` explicitly.
+set -euo pipefail
+
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Only run if Rust sources are in the index.
+if ! git diff --cached --name-only | grep -qE '\.rs$|Cargo\.toml$|Cargo\.lock$'; then
+    exit 0
+fi
+
+exec "$(git rev-parse --show-toplevel)/scripts/verify.sh"

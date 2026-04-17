@@ -1,0 +1,10 @@
+/target
+/Cargo.lock.bak
+.DS_Store
+
+# Real credentials must never be committed. Only the template
+# `nsnfind.toml.example` is tracked. See that file for setup instructions.
+/nsnfind.toml
+/nsnfind.local.toml
+/config.local.toml
+/.env

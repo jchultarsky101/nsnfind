@@ -1,0 +1,27 @@
+[package]
+name = "nsnfind"
+version = "0.1.0"
+edition = "2024"
+description = "CLI to query parts-availability backends (ILSmart SOAP today) by NSN/NIIN"
+repository = "https://github.com/jchultarsky101/nsnfind"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+csv = "1"
+futures = "0.3"
+quick-xml = { version = "0.39", features = ["serialize"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "http2", "gzip", "charset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
