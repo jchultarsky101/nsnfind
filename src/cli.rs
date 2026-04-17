@@ -78,7 +78,13 @@ pub struct GovernmentArgs {
 
     /// Comma-separated government datasets to query.
     /// Valid values: AMDF, CRF, DLA, ISDOD, ISUSAF, MCRL, MLC, MOE, MRIL, NHA, PH, TECH.
-    #[arg(long, value_name = "LIST", default_value = "MCRL", value_parser = parse_datasets)]
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = "MCRL",
+        value_delimiter = ',',
+        value_parser = parse_dataset,
+    )]
     pub datasets: Vec<Dataset>,
 }
 
@@ -90,26 +96,22 @@ pub struct LookupArgs {
     /// Government datasets to query in the first call. Default: MCRL (enough to
     /// retrieve ItemName, FSC, CAGE cross-reference, and the
     /// HasPartsAvailability flag that gates the second call).
-    #[arg(long, value_name = "LIST", default_value = "MCRL", value_parser = parse_datasets)]
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = "MCRL",
+        value_delimiter = ',',
+        value_parser = parse_dataset,
+    )]
     pub gov_datasets: Vec<Dataset>,
 }
 
-fn parse_datasets(s: &str) -> Result<Vec<Dataset>, String> {
-    let mut out = Vec::new();
-    for piece in s.split(',') {
-        let p = piece.trim();
-        if p.is_empty() {
-            continue;
-        }
-        match Dataset::parse(p) {
-            Some(d) => out.push(d),
-            None => return Err(format!("unknown dataset {p:?}")),
-        }
+fn parse_dataset(s: &str) -> Result<Dataset, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("empty dataset value".to_owned());
     }
-    if out.is_empty() {
-        return Err("at least one dataset is required".to_owned());
-    }
-    Ok(out)
+    Dataset::parse(trimmed).ok_or_else(|| format!("unknown dataset {trimmed:?}"))
 }
 
 #[derive(Debug, Subcommand)]

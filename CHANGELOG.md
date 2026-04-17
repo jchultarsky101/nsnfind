@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Validator for `credentials.user_id` now accepts the `U01` suffix case-insensitively (observed: ILSmart normalizes to uppercase server-side).
+- `--datasets` / `--gov-datasets` runtime panic: the custom value parser returned `Vec<Dataset>` but clap's derive expected a single `Dataset` per delimited value. Parser now returns one `Dataset`; comma splitting is delegated to clap via `value_delimiter = ','`.
+
+### Verified
+- End-to-end smoke test against ILSmart TEST MODE (`TESTU01` / `WEBSERVICETEST`, documented in SDK v5.0): `availability`, `government` (with default and `--datasets MCRL,PH`), and `lookup` all return populated responses and render JSON/CSV correctly.
 
 ## [0.1.0] — initial scaffold
 
