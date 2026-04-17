@@ -140,7 +140,7 @@ pub struct GovernmentResult {
 
 impl GovernmentResult {
     /// First result's `HasPartsAvailability` parsed as a best-effort boolean.
-    /// The field is typed `xs:string` in the WSDL; ILS documents "true"/"false"
+    /// The field is typed `xs:string` in the WSDL; upstream documents "true"/"false"
     /// but we accept common variants case-insensitively.
     pub fn has_parts_availability(&self) -> Option<bool> {
         self.items

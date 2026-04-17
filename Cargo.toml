@@ -2,7 +2,7 @@
 name = "nsnfind"
 version = "0.1.0"
 edition = "2024"
-description = "CLI to query parts-availability backends (ILSmart SOAP today) by NSN/NIIN"
+description = "CLI to look up parts availability and government catalog data by NSN/NIIN"
 repository = "https://github.com/jchultarsky101/nsnfind"
 license = "MIT OR Apache-2.0"
 
