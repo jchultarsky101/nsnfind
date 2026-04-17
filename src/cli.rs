@@ -10,8 +10,9 @@ use crate::client::IlsClient;
 use crate::config::{
     Config, DEFAULT_CONCURRENCY, DEFAULT_ENDPOINT, DEFAULT_TIMEOUT_SECS, ends_with_u01,
 };
-use crate::nsn::parse_nsn_list;
+use crate::nsn::{InputEntry, parse_nsn_list};
 use crate::output;
+use crate::soap::government::Dataset;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -35,8 +36,19 @@ pub struct Args {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Query GetPartsAvailability for each NSN/NIIN in an input file
-    Query(QueryArgs),
+    /// Who is currently selling this NSN/NIIN? (ILSmart GetPartsAvailability)
+    #[command(alias = "parts", alias = "avail")]
+    Availability(CommonQueryArgs),
+
+    /// What does the US government catalog say about this NSN/NIIN?
+    /// (ILSmart GetGovernmentData)
+    #[command(alias = "gov", alias = "govdata")]
+    Government(GovernmentArgs),
+
+    /// Combined lookup: government catalog first, then marketplace suppliers
+    /// when the catalog indicates there are live listings.
+    #[command(alias = "check", alias = "all")]
+    Lookup(LookupArgs),
 
     /// Manage the config file
     #[command(subcommand)]
@@ -44,7 +56,7 @@ pub enum Command {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct QueryArgs {
+pub struct CommonQueryArgs {
     /// Path to a flat text file with one NSN or NIIN per line.
     /// Blank lines and lines beginning with '#' are ignored.
     #[arg(value_name = "INPUT")]
@@ -57,6 +69,47 @@ pub struct QueryArgs {
     /// Write output to this file instead of stdout.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct GovernmentArgs {
+    #[command(flatten)]
+    pub common: CommonQueryArgs,
+
+    /// Comma-separated government datasets to query.
+    /// Valid values: AMDF, CRF, DLA, ISDOD, ISUSAF, MCRL, MLC, MOE, MRIL, NHA, PH, TECH.
+    #[arg(long, value_name = "LIST", default_value = "MCRL", value_parser = parse_datasets)]
+    pub datasets: Vec<Dataset>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct LookupArgs {
+    #[command(flatten)]
+    pub common: CommonQueryArgs,
+
+    /// Government datasets to query in the first call. Default: MCRL (enough to
+    /// retrieve ItemName, FSC, CAGE cross-reference, and the
+    /// HasPartsAvailability flag that gates the second call).
+    #[arg(long, value_name = "LIST", default_value = "MCRL", value_parser = parse_datasets)]
+    pub gov_datasets: Vec<Dataset>,
+}
+
+fn parse_datasets(s: &str) -> Result<Vec<Dataset>, String> {
+    let mut out = Vec::new();
+    for piece in s.split(',') {
+        let p = piece.trim();
+        if p.is_empty() {
+            continue;
+        }
+        match Dataset::parse(p) {
+            Some(d) => out.push(d),
+            None => return Err(format!("unknown dataset {p:?}")),
+        }
+    }
+    if out.is_empty() {
+        return Err("at least one dataset is required".to_owned());
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Subcommand)]
@@ -110,14 +163,43 @@ pub async fn run() -> Result<()> {
     init_tracing(args.verbose);
 
     match args.command {
-        Command::Query(q) => run_query(args.config.as_deref(), q).await,
+        Command::Availability(q) => run_availability(args.config.as_deref(), q).await,
+        Command::Government(g) => run_government(args.config.as_deref(), g).await,
+        Command::Lookup(l) => run_lookup(args.config.as_deref(), l).await,
         Command::Config(ConfigCommand::Path) => run_config_path(args.config.as_deref()),
         Command::Config(ConfigCommand::Show) => run_config_show(args.config.as_deref()),
         Command::Config(ConfigCommand::Set(s)) => run_config_set(args.config.as_deref(), s),
     }
 }
 
-async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
+async fn run_availability(config_path: Option<&Path>, args: CommonQueryArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_availability(entries).await;
+    emit(&args, |w| {
+        output::write_availability(args.format, &results, w)
+    })
+}
+
+async fn run_government(config_path: Option<&Path>, args: GovernmentArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.common.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_government(entries, args.datasets.clone()).await;
+    emit(&args.common, |w| {
+        output::write_government(args.common.format, &results, w)
+    })
+}
+
+async fn run_lookup(config_path: Option<&Path>, args: LookupArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.common.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_lookup(entries, args.gov_datasets.clone()).await;
+    emit(&args.common, |w| {
+        output::write_combined(args.common.format, &results, w)
+    })
+}
+
+fn prepare(config_path: Option<&Path>, input: &Path) -> Result<(Config, Vec<InputEntry>)> {
     let config = Config::load(config_path).context("failed to load config")?;
     if let Some(src) = &config.source {
         info!(
@@ -127,9 +209,8 @@ async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
             "configuration loaded"
         );
     }
-
-    let input_text = std::fs::read_to_string(&args.input)
-        .with_context(|| format!("failed to read input {}", args.input.display()))?;
+    let input_text = std::fs::read_to_string(input)
+        .with_context(|| format!("failed to read input {}", input.display()))?;
     let entries = parse_nsn_list(&input_text);
     let (valid, invalid) = entries
         .iter()
@@ -143,20 +224,23 @@ async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
             "input file contains no NSNs (after stripping blanks and comments)"
         ));
     }
+    Ok((config, entries))
+}
 
-    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
-    let results = client.query_all(entries).await;
-
+fn emit<F>(args: &CommonQueryArgs, writer: F) -> Result<()>
+where
+    F: FnOnce(Box<dyn Write>) -> anyhow::Result<()>,
+{
     match args.output.as_deref() {
         Some(path) => {
             let file = std::fs::File::create(path)
                 .with_context(|| format!("failed to create output {}", path.display()))?;
-            output::write(args.format, &results, std::io::BufWriter::new(file))?;
+            writer(Box::new(std::io::BufWriter::new(file)))?;
             info!(path = %path.display(), "wrote output");
         }
         None => {
             let stdout = std::io::stdout().lock();
-            output::write(args.format, &results, stdout)?;
+            writer(Box::new(stdout))?;
         }
     }
     Ok(())

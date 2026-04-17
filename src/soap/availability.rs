@@ -1,8 +1,10 @@
+//! `GetPartsAvailability` — marketplace listings for a single part number.
+
 use serde::{Deserialize, Serialize};
 
+use super::{SERVICE_NS, SoapFault, fault_to_error, xml_escape};
 use crate::error::IlsError;
 
-const SERVICE_NS: &str = "http://namespace.ilsmart.com/v2";
 pub const SOAP_ACTION: &str = "http://namespace.ilsmart.com/v2/GetPartsAvailability";
 
 pub fn build_request(user_id: &str, password: &str, part_number: &str) -> String {
@@ -29,29 +31,11 @@ pub fn build_request(user_id: &str, password: &str, part_number: &str) -> String
     )
 }
 
-fn xml_escape(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for c in input.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 pub fn parse_response(xml: &str) -> Result<Availability, IlsError> {
     let env: Envelope = quick_xml::de::from_str(xml)
         .map_err(|e| IlsError::Parse(format!("xml deserialize: {e}")))?;
     if let Some(fault) = env.body.fault {
-        return Err(IlsError::SoapFault {
-            code: fault.faultcode.unwrap_or_default(),
-            message: fault.faultstring.unwrap_or_default(),
-        });
+        return Err(fault_to_error(fault));
     }
     let resp = env.body.response.ok_or_else(|| {
         IlsError::Parse("missing GetPartsAvailabilityResponse element".to_owned())
@@ -81,12 +65,6 @@ struct SoapBody {
     response: Option<RespWrapper>,
     #[serde(rename = "Fault", default)]
     fault: Option<SoapFault>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SoapFault {
-    faultcode: Option<String>,
-    faultstring: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,14 +212,6 @@ pub struct PartSearchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn escapes_xml_special_chars() {
-        assert_eq!(
-            xml_escape(r#"a&b<c>d"e'f"#),
-            "a&amp;b&lt;c&gt;d&quot;e&apos;f"
-        );
-    }
 
     #[test]
     fn request_contains_expected_fields() {

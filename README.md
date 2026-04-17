@@ -60,40 +60,55 @@ ILSmart credential rules enforced at load time:
 
 ## Usage
 
+Three query subcommands, each reads the same newline-delimited NSN/NIIN input file:
+
 ```sh
-nsnfind query docs/sample-nsns.txt                # JSON to stdout
-nsnfind query docs/sample-nsns.txt --format csv   # CSV to stdout
-nsnfind query docs/sample-nsns.txt -o out.json    # write to file
-nsnfind query docs/sample-nsns.txt -v             # INFO logs to stderr
-nsnfind config path                               # resolved config file
-nsnfind config show                               # print effective config (password redacted)
+# Who is currently selling this NSN? (ILSmart GetPartsAvailability, WS Buyer Bundle)
+nsnfind availability docs/sample-nsns.txt
+
+# What does the government catalog say about this NSN? (ILSmart GetGovernmentData, ILS Gov Options)
+nsnfind government docs/sample-nsns.txt
+nsnfind government docs/sample-nsns.txt --datasets MCRL,PH
+
+# Combined: call government first, then availability if the catalog flags HasPartsAvailability=true.
+nsnfind lookup docs/sample-nsns.txt
+nsnfind lookup docs/sample-nsns.txt --gov-datasets MCRL,PH
+
+# Common flags
+nsnfind <subcommand> <input> --format csv     # default is json
+nsnfind <subcommand> <input> -o out.json      # write to file
+nsnfind <subcommand> <input> -v               # INFO logs to stderr
+```
+
+Aliases are registered: `availability`|`parts`|`avail`, `government`|`gov`|`govdata`, `lookup`|`check`|`all`.
+
+Config management is unchanged:
+
+```sh
+nsnfind config path                           # resolved config file
+nsnfind config show                           # print effective config (password redacted)
+nsnfind config set --user-id X --password-stdin <<<'yourPassword'
 ```
 
 Set `RUST_LOG=nsnfind=debug` for more detail; `-v`/`-vv`/`-vvv` are shortcuts.
 
 ### Output shape
 
-**JSON** (per input line):
-```json
-[
-  {
-    "line": 1,
-    "input": "3020-01-204-7592",
-    "normalized": "3020012047592",
-    "status": "ok",
-    "listings": [
-      {
-        "company": { "id": "...", "name": "...", "supplier_cage": "..." },
-        "parts": { "items": [ { "part_number": "...", "condition_code": "NE", "quantity": "1", "..." : "..." } ] }
-      }
-    ]
-  }
-]
-```
+**JSON** — one record per input line, shape depends on subcommand. Each record carries a `status` field:
 
-`status` ∈ `ok | no_results | api_fault | error | invalid`.
+| subcommand     | status values                                                                                          |
+|----------------|--------------------------------------------------------------------------------------------------------|
+| `availability` | `ok`, `no_results`, `api_fault`, `error`, `invalid`                                                   |
+| `government`   | same plus surfaces `faults[]` / `items[]`                                                              |
+| `lookup`       | `ok`, `catalog_only`, `catalog_only_no_listings`, `catalog_only_avail_error`, `not_in_catalog`, `gov_fault`, `error`, `invalid` |
 
-**CSV** is a 22-column flat table, one row per (input, supplier, matching part). Inputs with no match, invalid NSNs, and transport errors each get a single summary row.
+**CSV** — flat per-subcommand tables:
+
+- `availability` → 22 columns; one row per (input, supplier, matching part).
+- `government` → 12 columns; one row per (input, MCRL cross-reference item).
+- `lookup` → 26 columns; merges government metadata (`item_name`, `fsc`, `niin`, `has_parts_availability`, primary MCRL CAGE/company) with supplier details from `availability`.
+
+Inputs with no match, invalid NSNs, and transport errors each get a single summary row.
 
 ## Development
 
