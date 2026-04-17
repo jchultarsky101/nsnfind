@@ -25,6 +25,28 @@ cargo install --path .
 
 The binary is installed as `nsnfind` into `~/.cargo/bin`.
 
+## Quick smoke test (no real credentials)
+
+ILSmart publishes a shared TEST MODE account in SDK v5.0 that returns static sample data. Useful for verifying wire-format and response parsing before your real credentials are entitled:
+
+```toml
+# ~/nsnfind-test.toml
+[credentials]
+user_id = "TESTU01"
+password = "WEBSERVICETEST"
+
+[api]
+endpoint = "https://secure.ilsmart.com/services/v2/soap11"
+```
+
+```sh
+nsnfind --config ~/nsnfind-test.toml availability docs/sample-nsns.txt
+nsnfind --config ~/nsnfind-test.toml government docs/sample-nsns.txt
+nsnfind --config ~/nsnfind-test.toml lookup docs/sample-nsns.txt
+```
+
+**Don't build business logic against TEST MODE data** — the values (CAGE `1A2B`, "EXAMPLE RESOURCES LLC", etc.) are fixtures, not representative. Use it only for plumbing checks. Our code is derived from the SOAP WSDL, so this caveat is a deployment-hygiene reminder, not a correctness concern.
+
 ## Configure
 
 Three equivalent options:
