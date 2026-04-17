@@ -7,7 +7,9 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::client::IlsClient;
-use crate::config::{Config, DEFAULT_CONCURRENCY, DEFAULT_ENDPOINT, DEFAULT_TIMEOUT_SECS};
+use crate::config::{
+    Config, DEFAULT_CONCURRENCY, DEFAULT_ENDPOINT, DEFAULT_TIMEOUT_SECS, ends_with_u01,
+};
 use crate::nsn::parse_nsn_list;
 use crate::output;
 
@@ -358,9 +360,9 @@ impl ConfigDoc {
             .get("user_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("credentials.user_id is required"))?;
-        if !uid.ends_with("U01") {
+        if !ends_with_u01(uid) {
             return Err(anyhow!(
-                "credentials.user_id must end with 'U01' (got {uid:?})"
+                "credentials.user_id must end with 'U01' (case-insensitive); got {uid:?}"
             ));
         }
         if uid.len() > 10 || !uid.chars().all(|c| c.is_ascii_alphanumeric()) {

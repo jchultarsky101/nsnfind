@@ -51,6 +51,10 @@ impl Default for ApiConfig {
     }
 }
 
+pub fn ends_with_u01(s: &str) -> bool {
+    s.len() >= 3 && s[s.len() - 3..].eq_ignore_ascii_case("U01")
+}
+
 fn default_endpoint() -> String {
     DEFAULT_ENDPOINT.to_owned()
 }
@@ -106,9 +110,9 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         let u = self.credentials.user_id.as_str();
-        if !u.ends_with("U01") {
+        if !ends_with_u01(u) {
             return Err(anyhow!(
-                "credentials.user_id must end with 'U01' (got {u:?})"
+                "credentials.user_id must end with 'U01' (case-insensitive); got {u:?}"
             ));
         }
         if u.len() > 10 {
@@ -152,6 +156,40 @@ password = "s3cret"
         assert_eq!(cfg.api.endpoint, DEFAULT_ENDPOINT);
         assert_eq!(cfg.api.concurrency, DEFAULT_CONCURRENCY);
         cfg.validate().expect("valid");
+    }
+
+    #[test]
+    fn validate_accepts_lowercase_u01_suffix() {
+        let text = r#"
+[credentials]
+user_id = "ctcwu01"
+password = "s3cret"
+"#;
+        let cfg: Config = toml::from_str(text).unwrap();
+        cfg.validate()
+            .expect("lowercase u01 suffix must be accepted");
+    }
+
+    #[test]
+    fn validate_accepts_mixed_case_u01_suffix() {
+        let text = r#"
+[credentials]
+user_id = "ctcWu01"
+password = "s3cret"
+"#;
+        let cfg: Config = toml::from_str(text).unwrap();
+        cfg.validate()
+            .expect("mixed-case u01 suffix must be accepted");
+    }
+
+    #[test]
+    fn ends_with_u01_cases() {
+        assert!(ends_with_u01("CTCWU01"));
+        assert!(ends_with_u01("ctcwu01"));
+        assert!(ends_with_u01("ctcWu01"));
+        assert!(!ends_with_u01("ctcwu02"));
+        assert!(!ends_with_u01("U0"));
+        assert!(!ends_with_u01(""));
     }
 
     #[test]
