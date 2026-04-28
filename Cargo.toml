@@ -1,6 +1,6 @@
 [package]
 name = "nsnfind"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI to look up parts availability and government catalog data by NSN/NIIN"
