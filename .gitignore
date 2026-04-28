@@ -2,6 +2,9 @@
 /Cargo.lock.bak
 .DS_Store
 
+# Claude Code creates per-session worktrees here; they are local-only.
+/.claude/worktrees/
+
 # Real credentials must never be committed. Only the template
 # `nsnfind.toml.example` is tracked. See that file for setup instructions.
 /nsnfind.toml
