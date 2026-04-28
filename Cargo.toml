@@ -2,9 +2,21 @@
 name = "nsnfind"
 version = "0.2.0"
 edition = "2024"
+authors = ["Julian Chultarsky <jchultarsky@physna.com>"]
 description = "CLI to look up parts availability and government catalog data by NSN/NIIN"
+homepage = "https://github.com/jchultarsky101/nsnfind"
 repository = "https://github.com/jchultarsky101/nsnfind"
+documentation = "https://github.com/jchultarsky101/nsnfind#readme"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
+keywords = ["nsn", "niin", "ilsmart", "aerospace", "parts"]
+categories = ["command-line-utilities"]
+
+[package.metadata.wix]
+upgrade-guid = "7C4DC130-117C-40BA-9475-57CB5475046C"
+path-guid = "5A366EF4-257E-4179-BE37-E57F4A3B2ED8"
+license = false
+eula = false
 
 [dependencies]
 anyhow = "1"
@@ -25,3 +37,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
