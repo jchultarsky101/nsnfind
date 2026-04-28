@@ -7,15 +7,18 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::client::IlsClient;
-use crate::config::{Config, DEFAULT_CONCURRENCY, DEFAULT_ENDPOINT, DEFAULT_TIMEOUT_SECS};
-use crate::nsn::parse_nsn_list;
+use crate::config::{
+    Config, DEFAULT_CONCURRENCY, DEFAULT_ENDPOINT, DEFAULT_TIMEOUT_SECS, ends_with_u01,
+};
+use crate::nsn::{InputEntry, parse_nsn_list};
 use crate::output;
+use crate::soap::government::Dataset;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "nsnfind",
     version,
-    about = "Query parts-availability backends (ILSmart SOAP today) by NSN/NIIN"
+    about = "Look up parts availability and government catalog data by NSN/NIIN"
 )]
 pub struct Args {
     /// Path to the config file (TOML). Overrides $NSNFIND_CONFIG, ./nsnfind.toml,
@@ -33,8 +36,18 @@ pub struct Args {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Query GetPartsAvailability for each NSN/NIIN in an input file
-    Query(QueryArgs),
+    /// Who is currently selling this NSN/NIIN?
+    #[command(alias = "parts", alias = "avail")]
+    Availability(CommonQueryArgs),
+
+    /// What does the US government catalog say about this NSN/NIIN?
+    #[command(alias = "gov", alias = "govdata")]
+    Government(GovernmentArgs),
+
+    /// Combined lookup: government catalog first, then marketplace suppliers
+    /// when the catalog indicates there are live listings.
+    #[command(alias = "check", alias = "all")]
+    Lookup(LookupArgs),
 
     /// Manage the config file
     #[command(subcommand)]
@@ -42,7 +55,7 @@ pub enum Command {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct QueryArgs {
+pub struct CommonQueryArgs {
     /// Path to a flat text file with one NSN or NIIN per line.
     /// Blank lines and lines beginning with '#' are ignored.
     #[arg(value_name = "INPUT")]
@@ -55,6 +68,49 @@ pub struct QueryArgs {
     /// Write output to this file instead of stdout.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct GovernmentArgs {
+    #[command(flatten)]
+    pub common: CommonQueryArgs,
+
+    /// Comma-separated government datasets to query.
+    /// Valid values: AMDF, CRF, DLA, ISDOD, ISUSAF, MCRL, MLC, MOE, MRIL, NHA, PH, TECH.
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = "MCRL",
+        value_delimiter = ',',
+        value_parser = parse_dataset,
+    )]
+    pub datasets: Vec<Dataset>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct LookupArgs {
+    #[command(flatten)]
+    pub common: CommonQueryArgs,
+
+    /// Government datasets to query in the first call. Default: MCRL (enough to
+    /// retrieve ItemName, FSC, CAGE cross-reference, and the
+    /// HasPartsAvailability flag that gates the second call).
+    #[arg(
+        long,
+        value_name = "LIST",
+        default_value = "MCRL",
+        value_delimiter = ',',
+        value_parser = parse_dataset,
+    )]
+    pub gov_datasets: Vec<Dataset>,
+}
+
+fn parse_dataset(s: &str) -> Result<Dataset, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("empty dataset value".to_owned());
+    }
+    Dataset::parse(trimmed).ok_or_else(|| format!("unknown dataset {trimmed:?}"))
 }
 
 #[derive(Debug, Subcommand)]
@@ -71,11 +127,11 @@ pub enum ConfigCommand {
 
 #[derive(Debug, clap::Args)]
 pub struct ConfigSetArgs {
-    /// ILSmart UserId (up to 10 alphanumeric chars, ending in U01)
+    /// Account user identifier (up to 10 alphanumeric chars, ending in U01)
     #[arg(long)]
     pub user_id: Option<String>,
 
-    /// ILSmart password (6-20 chars). Leaks into shell history; prefer --password-stdin.
+    /// Account password (6-20 chars). Leaks into shell history; prefer --password-stdin.
     #[arg(long, conflicts_with = "password_stdin")]
     pub password: Option<String>,
 
@@ -108,14 +164,43 @@ pub async fn run() -> Result<()> {
     init_tracing(args.verbose);
 
     match args.command {
-        Command::Query(q) => run_query(args.config.as_deref(), q).await,
+        Command::Availability(q) => run_availability(args.config.as_deref(), q).await,
+        Command::Government(g) => run_government(args.config.as_deref(), g).await,
+        Command::Lookup(l) => run_lookup(args.config.as_deref(), l).await,
         Command::Config(ConfigCommand::Path) => run_config_path(args.config.as_deref()),
         Command::Config(ConfigCommand::Show) => run_config_show(args.config.as_deref()),
         Command::Config(ConfigCommand::Set(s)) => run_config_set(args.config.as_deref(), s),
     }
 }
 
-async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
+async fn run_availability(config_path: Option<&Path>, args: CommonQueryArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_availability(entries).await;
+    emit(&args, |w| {
+        output::write_availability(args.format, &results, w)
+    })
+}
+
+async fn run_government(config_path: Option<&Path>, args: GovernmentArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.common.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_government(entries, args.datasets.clone()).await;
+    emit(&args.common, |w| {
+        output::write_government(args.common.format, &results, w)
+    })
+}
+
+async fn run_lookup(config_path: Option<&Path>, args: LookupArgs) -> Result<()> {
+    let (config, entries) = prepare(config_path, &args.common.input)?;
+    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
+    let results = client.run_lookup(entries, args.gov_datasets.clone()).await;
+    emit(&args.common, |w| {
+        output::write_combined(args.common.format, &results, w)
+    })
+}
+
+fn prepare(config_path: Option<&Path>, input: &Path) -> Result<(Config, Vec<InputEntry>)> {
     let config = Config::load(config_path).context("failed to load config")?;
     if let Some(src) = &config.source {
         info!(
@@ -125,9 +210,8 @@ async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
             "configuration loaded"
         );
     }
-
-    let input_text = std::fs::read_to_string(&args.input)
-        .with_context(|| format!("failed to read input {}", args.input.display()))?;
+    let input_text = std::fs::read_to_string(input)
+        .with_context(|| format!("failed to read input {}", input.display()))?;
     let entries = parse_nsn_list(&input_text);
     let (valid, invalid) = entries
         .iter()
@@ -141,20 +225,23 @@ async fn run_query(config_path: Option<&Path>, args: QueryArgs) -> Result<()> {
             "input file contains no NSNs (after stripping blanks and comments)"
         ));
     }
+    Ok((config, entries))
+}
 
-    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
-    let results = client.query_all(entries).await;
-
+fn emit<F>(args: &CommonQueryArgs, writer: F) -> Result<()>
+where
+    F: FnOnce(Box<dyn Write>) -> anyhow::Result<()>,
+{
     match args.output.as_deref() {
         Some(path) => {
             let file = std::fs::File::create(path)
                 .with_context(|| format!("failed to create output {}", path.display()))?;
-            output::write(args.format, &results, std::io::BufWriter::new(file))?;
+            writer(Box::new(std::io::BufWriter::new(file)))?;
             info!(path = %path.display(), "wrote output");
         }
         None => {
             let stdout = std::io::stdout().lock();
-            output::write(args.format, &results, stdout)?;
+            writer(Box::new(stdout))?;
         }
     }
     Ok(())
@@ -358,9 +445,9 @@ impl ConfigDoc {
             .get("user_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("credentials.user_id is required"))?;
-        if !uid.ends_with("U01") {
+        if !ends_with_u01(uid) {
             return Err(anyhow!(
-                "credentials.user_id must end with 'U01' (got {uid:?})"
+                "credentials.user_id must end with 'U01' (case-insensitive); got {uid:?}"
             ));
         }
         if uid.len() > 10 || !uid.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -395,7 +482,7 @@ impl ConfigDoc {
 
     fn to_toml_string(&self) -> String {
         let mut out = String::new();
-        out.push_str("# ILSmart CLI configuration\n");
+        out.push_str("# nsnfind configuration\n");
         out.push_str("# Generated by `ils config set`. Free-form edits are preserved on load\n");
         out.push_str("# but will be rewritten (without comments) on the next `config set`.\n");
         out.push('\n');

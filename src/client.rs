@@ -6,7 +6,8 @@ use tracing::{debug, warn};
 use crate::config::Config;
 use crate::error::IlsError;
 use crate::nsn::InputEntry;
-use crate::soap::{self, Availability, SOAP_ACTION};
+use crate::soap::availability::{self, Availability};
+use crate::soap::government::{self, Dataset, GovernmentResult};
 
 pub struct IlsClient {
     http: reqwest::Client,
@@ -31,20 +32,107 @@ impl IlsClient {
         })
     }
 
-    pub async fn query_one(&self, part_number: &str) -> Result<Availability, IlsError> {
-        let body = soap::build_request(&self.user_id, &self.password, part_number);
-        debug!(part = part_number, bytes = body.len(), "POST SOAP request");
+    pub async fn get_parts_availability(
+        &self,
+        part_number: &str,
+    ) -> Result<Availability, IlsError> {
+        let body = availability::build_request(&self.user_id, &self.password, part_number);
+        let text = self
+            .post_soap(
+                availability::SOAP_ACTION,
+                body,
+                "GetPartsAvailability",
+                part_number,
+            )
+            .await?;
+        availability::parse_response(&text)
+    }
+
+    pub async fn get_government_data(
+        &self,
+        part_number: &str,
+        datasets: &[Dataset],
+    ) -> Result<GovernmentResult, IlsError> {
+        let body = government::build_request(&self.user_id, &self.password, part_number, datasets);
+        let text = self
+            .post_soap(
+                government::SOAP_ACTION,
+                body,
+                "GetGovernmentData",
+                part_number,
+            )
+            .await?;
+        government::parse_response(&text)
+    }
+
+    /// Combined flow: look up government data first; if it indicates the part
+    /// has marketplace listings, also call `GetPartsAvailability` and merge.
+    pub async fn lookup(
+        &self,
+        part_number: &str,
+        gov_datasets: &[Dataset],
+    ) -> Result<Combined, IlsError> {
+        let government = self.get_government_data(part_number, gov_datasets).await?;
+        if !government.faults.is_empty() || government.items.is_empty() {
+            return Ok(Combined {
+                government,
+                availability: None,
+                availability_error: None,
+            });
+        }
+        match government.has_parts_availability() {
+            Some(true) => match self.get_parts_availability(part_number).await {
+                Ok(a) => Ok(Combined {
+                    government,
+                    availability: Some(a),
+                    availability_error: None,
+                }),
+                Err(e) => {
+                    warn!(
+                        part = part_number,
+                        error = %e,
+                        "availability lookup failed after successful government lookup"
+                    );
+                    Ok(Combined {
+                        government,
+                        availability: None,
+                        availability_error: Some(e.to_string()),
+                    })
+                }
+            },
+            _ => Ok(Combined {
+                government,
+                availability: None,
+                availability_error: None,
+            }),
+        }
+    }
+
+    async fn post_soap(
+        &self,
+        action: &str,
+        body: String,
+        op: &str,
+        part_number: &str,
+    ) -> Result<String, IlsError> {
+        debug!(
+            op,
+            part = part_number,
+            bytes = body.len(),
+            "POST SOAP request"
+        );
         let resp = self
             .http
             .post(&self.endpoint)
             .header("Content-Type", "text/xml; charset=utf-8")
-            .header("SOAPAction", format!("\"{SOAP_ACTION}\""))
+            .header("SOAPAction", format!("\"{action}\""))
             .body(body)
             .send()
             .await?;
         let status = resp.status();
         let text = resp.text().await?;
         debug!(
+            op,
             part = part_number,
             status = status.as_u16(),
             bytes = text.len(),
@@ -56,45 +144,103 @@ impl IlsClient {
                 body: text,
             });
         }
-        soap::parse_response(&text)
+        Ok(text)
     }
 
-    pub async fn query_all(&self, entries: Vec<InputEntry>) -> Vec<QueryResult> {
-        let concurrency = self.concurrency;
-        let futs = entries
-            .into_iter()
-            .enumerate()
-            .map(|(idx, entry)| async move {
-                let outcome = match entry.parsed.as_ref() {
-                    Ok(nsn) => match self.query_one(&nsn.normalized).await {
-                        Ok(a) => Outcome::Ok(a),
-                        Err(e) => {
-                            warn!(part = %nsn.normalized, error = %e, "query failed");
-                            Outcome::Err(e.to_string())
-                        }
-                    },
-                    Err(e) => Outcome::Invalid(e.to_string()),
-                };
-                (idx, QueryResult { entry, outcome })
-            });
-        let mut collected: Vec<_> = stream::iter(futs)
-            .buffer_unordered(concurrency)
-            .collect()
-            .await;
-        collected.sort_by_key(|(i, _)| *i);
-        collected.into_iter().map(|(_, r)| r).collect()
+    pub async fn run_availability(
+        &self,
+        entries: Vec<InputEntry>,
+    ) -> Vec<QueryResult<Availability>> {
+        let futs = entries.into_iter().enumerate().map(|(idx, entry)| async move {
+            let outcome = match entry.parsed.as_ref() {
+                Ok(nsn) => match self.get_parts_availability(&nsn.normalized).await {
+                    Ok(v) => Outcome::Ok(v),
+                    Err(e) => {
+                        warn!(op = "availability", part = %nsn.normalized, error = %e, "query failed");
+                        Outcome::Err(e.to_string())
+                    }
+                },
+                Err(e) => Outcome::Invalid(e.to_string()),
+            };
+            (idx, QueryResult { entry, outcome })
+        });
+        collect_sorted(futs, self.concurrency).await
+    }
+
+    pub async fn run_government(
+        &self,
+        entries: Vec<InputEntry>,
+        datasets: Vec<Dataset>,
+    ) -> Vec<QueryResult<GovernmentResult>> {
+        let datasets = &datasets;
+        let futs = entries.into_iter().enumerate().map(|(idx, entry)| async move {
+            let outcome = match entry.parsed.as_ref() {
+                Ok(nsn) => match self.get_government_data(&nsn.normalized, datasets).await {
+                    Ok(v) => Outcome::Ok(v),
+                    Err(e) => {
+                        warn!(op = "government", part = %nsn.normalized, error = %e, "query failed");
+                        Outcome::Err(e.to_string())
+                    }
+                },
+                Err(e) => Outcome::Invalid(e.to_string()),
+            };
+            (idx, QueryResult { entry, outcome })
+        });
+        collect_sorted(futs, self.concurrency).await
+    }
+
+    pub async fn run_lookup(
+        &self,
+        entries: Vec<InputEntry>,
+        gov_datasets: Vec<Dataset>,
+    ) -> Vec<QueryResult<Combined>> {
+        let datasets = &gov_datasets;
+        let futs = entries.into_iter().enumerate().map(|(idx, entry)| async move {
+            let outcome = match entry.parsed.as_ref() {
+                Ok(nsn) => match self.lookup(&nsn.normalized, datasets).await {
+                    Ok(v) => Outcome::Ok(v),
+                    Err(e) => {
+                        warn!(op = "lookup", part = %nsn.normalized, error = %e, "query failed");
+                        Outcome::Err(e.to_string())
+                    }
+                },
+                Err(e) => Outcome::Invalid(e.to_string()),
+            };
+            (idx, QueryResult { entry, outcome })
+        });
+        collect_sorted(futs, self.concurrency).await
     }
 }
 
+async fn collect_sorted<T, I, F>(futs: I, concurrency: usize) -> Vec<QueryResult<T>>
+where
+    I: Iterator<Item = F>,
+    F: std::future::Future<Output = (usize, QueryResult<T>)>,
+{
+    let mut collected: Vec<_> = stream::iter(futs)
+        .buffer_unordered(concurrency)
+        .collect()
+        .await;
+    collected.sort_by_key(|(i, _)| *i);
+    collected.into_iter().map(|(_, r)| r).collect()
+}
+
 #[derive(Debug)]
-pub struct QueryResult {
+pub struct Combined {
+    pub government: GovernmentResult,
+    pub availability: Option<Availability>,
+    pub availability_error: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct QueryResult<T> {
     pub entry: InputEntry,
-    pub outcome: Outcome,
+    pub outcome: Outcome<T>,
 }
 
 #[derive(Debug)]
-pub enum Outcome {
-    Ok(Availability),
+pub enum Outcome<T> {
+    Ok(T),
     Err(String),
     Invalid(String),
 }

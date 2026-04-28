@@ -1,5 +1,5 @@
-# Sample NSNs from docs/ILSmart - sample NSN codes.png
-# (columns in the screenshot: NSN, Noun, Source of Supply, CAGE Code, Qty, Status)
+# Sample NSNs for smoke testing.
+# Columns referenced in docs/sample NSN codes.png: NSN, Noun, Source of Supply, CAGE Code, Qty, Status.
 3020-01-204-7592
 1560-01-576-3458
 1560-01-576-3498
