@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-04-28
+
+### Changed
+- cargo-dist bumped 0.29.0 → 0.31.0. Regenerated release workflow uses `actions/checkout@v6`, `actions/upload-artifact@v6`, and `actions/download-artifact@v7`, eliminating the Node.js 20 deprecation warnings GitHub will start enforcing in June 2026.
+
 ## [0.2.2] — 2026-04-28
 
 ### Fixed
@@ -52,7 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded-concurrency query loop (default 4 in-flight, configurable).
 - GitHub Actions CI (fmt + clippy + test + release build) and opt-in pre-commit hook.
 
-[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.2...develop
+[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.3...develop
+[0.2.3]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jchultarsky101/nsnfind/compare/v0.1.0...v0.2.0
