@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-28
+
 ### Added
 - `government` subcommand — queries the US DoD government catalog for each NSN/NIIN with a configurable dataset list (default `MCRL`). JSON and CSV output. Returns item name, FSC, NIIN, `HasPartsAvailability` gate, MCRL cross-reference, NSN info, and procurement history.
 - `lookup` subcommand — combined flow: catalog lookup first, then supplier listings only when the catalog indicates live inventory. Outputs a merged per-NSN record; status codes distinguish `not_in_catalog`, `catalog_only`, `catalog_only_no_listings`, `catalog_only_avail_error`, and `ok`.
 - Dataset enum with parse/serialize for the 12 US DoD dataset codes (AMDF, CRF, DLA, ISDOD, ISUSAF, MCRL, MLC, MOE, MRIL, NHA, PH, TECH).
 - Subcommand aliases: `availability`/`parts`/`avail`, `government`/`gov`/`govdata`, `lookup`/`check`/`all`.
+- `docs/single-nsn.txt` smoke-test fixture (one NSN, for fast manual checks).
 
 ### Changed
 - **Breaking:** `query` subcommand removed; replaced by `availability` with the same arguments. Results are now generic over the per-operation payload type.
@@ -36,4 +39,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded-concurrency query loop (default 4 in-flight, configurable).
 - GitHub Actions CI (fmt + clippy + test + release build) and opt-in pre-commit hook.
 
-[Unreleased]: https://github.com/jchultarsky101/nsnfind/commits/develop
+[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.0...develop
+[0.2.0]: https://github.com/jchultarsky101/nsnfind/compare/v0.1.0...v0.2.0
