@@ -1,0 +1,2 @@
+# Sample NSN for smoke testing.
+6680-01-394-2555
