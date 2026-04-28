@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-28
+
+### Added
+- cargo-dist release pipeline: tag pushes (`v*`) build Linux (x86_64, aarch64), macOS (x86_64, aarch64), and Windows (x86_64) binaries; produce a Windows MSI; ship shell and PowerShell installers and the cargo-dist updater. Manifest fields (`authors`, `homepage`, `documentation`, `readme`, `keywords`, `categories`) added to satisfy installer metadata. WiX upgrade/path GUIDs locked in `[package.metadata.wix]` so MSI upgrades stay coherent across releases.
+
+### Note
+- v0.2.0 was tagged before this pipeline existed and ships without binary artifacts. v0.2.1 is the first release with attached binaries and installers.
+
 ## [0.2.0] — 2026-04-28
 
 ### Added
@@ -39,5 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded-concurrency query loop (default 4 in-flight, configurable).
 - GitHub Actions CI (fmt + clippy + test + release build) and opt-in pre-commit hook.
 
-[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.0...develop
+[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.1...develop
+[0.2.1]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jchultarsky101/nsnfind/compare/v0.1.0...v0.2.0
