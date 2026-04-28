@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-28
+
+### Fixed
+- Release pipeline pinned to `macos-latest` for both Apple targets. cargo-dist 0.29 defaults both `aarch64-apple-darwin` and `x86_64-apple-darwin` to `macos-13`, which is in GitHub's deprecation window and now hangs in the queue indefinitely. `macos-latest` (currently macos-14, Apple Silicon) builds aarch64 natively and cross-compiles x86_64 via the bundled Rust toolchain. v0.2.1's release workflow was canceled mid-run for this reason; v0.2.2 is the first release that publishes binaries successfully.
+
 ## [0.2.1] — 2026-04-28
 
 ### Added
@@ -47,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded-concurrency query loop (default 4 in-flight, configurable).
 - GitHub Actions CI (fmt + clippy + test + release build) and opt-in pre-commit hook.
 
-[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.1...develop
+[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.2...develop
+[0.2.2]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jchultarsky101/nsnfind/compare/v0.1.0...v0.2.0
