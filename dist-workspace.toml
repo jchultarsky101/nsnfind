@@ -15,3 +15,11 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = true
+
+# Pin macOS runners to current images. cargo-dist 0.29 defaults to macos-13,
+# which GitHub is deprecating; aarch64-apple-darwin requires macos-14+ for
+# native Apple Silicon, and x86_64-apple-darwin cross-compiles fine from
+# the same arm64 runner.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-latest"
+x86_64-apple-darwin = "macos-latest"
