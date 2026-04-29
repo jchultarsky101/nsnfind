@@ -7,7 +7,6 @@ use crate::config::Config;
 use crate::error::IlsError;
 use crate::nsn::InputEntry;
 use crate::soap::availability::{self, Availability};
-use crate::soap::government::{self, Dataset, GovernmentResult};
 
 pub struct IlsClient {
     http: reqwest::Client,
@@ -46,66 +45,6 @@ impl IlsClient {
             )
             .await?;
         availability::parse_response(&text)
-    }
-
-    pub async fn get_government_data(
-        &self,
-        part_number: &str,
-        datasets: &[Dataset],
-    ) -> Result<GovernmentResult, IlsError> {
-        let body = government::build_request(&self.user_id, &self.password, part_number, datasets);
-        let text = self
-            .post_soap(
-                government::SOAP_ACTION,
-                body,
-                "GetGovernmentData",
-                part_number,
-            )
-            .await?;
-        government::parse_response(&text)
-    }
-
-    /// Combined flow: look up government data first; if it indicates the part
-    /// has marketplace listings, also call `GetPartsAvailability` and merge.
-    pub async fn lookup(
-        &self,
-        part_number: &str,
-        gov_datasets: &[Dataset],
-    ) -> Result<Combined, IlsError> {
-        let government = self.get_government_data(part_number, gov_datasets).await?;
-        if !government.faults.is_empty() || government.items.is_empty() {
-            return Ok(Combined {
-                government,
-                availability: None,
-                availability_error: None,
-            });
-        }
-        match government.has_parts_availability() {
-            Some(true) => match self.get_parts_availability(part_number).await {
-                Ok(a) => Ok(Combined {
-                    government,
-                    availability: Some(a),
-                    availability_error: None,
-                }),
-                Err(e) => {
-                    warn!(
-                        part = part_number,
-                        error = %e,
-                        "availability lookup failed after successful government lookup"
-                    );
-                    Ok(Combined {
-                        government,
-                        availability: None,
-                        availability_error: Some(e.to_string()),
-                    })
-                }
-            },
-            _ => Ok(Combined {
-                government,
-                availability: None,
-                availability_error: None,
-            }),
-        }
     }
 
     async fn post_soap(
@@ -166,50 +105,6 @@ impl IlsClient {
         });
         collect_sorted(futs, self.concurrency).await
     }
-
-    pub async fn run_government(
-        &self,
-        entries: Vec<InputEntry>,
-        datasets: Vec<Dataset>,
-    ) -> Vec<QueryResult<GovernmentResult>> {
-        let datasets = &datasets;
-        let futs = entries.into_iter().enumerate().map(|(idx, entry)| async move {
-            let outcome = match entry.parsed.as_ref() {
-                Ok(nsn) => match self.get_government_data(&nsn.normalized, datasets).await {
-                    Ok(v) => Outcome::Ok(v),
-                    Err(e) => {
-                        warn!(op = "government", part = %nsn.normalized, error = %e, "query failed");
-                        Outcome::Err(e.to_string())
-                    }
-                },
-                Err(e) => Outcome::Invalid(e.to_string()),
-            };
-            (idx, QueryResult { entry, outcome })
-        });
-        collect_sorted(futs, self.concurrency).await
-    }
-
-    pub async fn run_lookup(
-        &self,
-        entries: Vec<InputEntry>,
-        gov_datasets: Vec<Dataset>,
-    ) -> Vec<QueryResult<Combined>> {
-        let datasets = &gov_datasets;
-        let futs = entries.into_iter().enumerate().map(|(idx, entry)| async move {
-            let outcome = match entry.parsed.as_ref() {
-                Ok(nsn) => match self.lookup(&nsn.normalized, datasets).await {
-                    Ok(v) => Outcome::Ok(v),
-                    Err(e) => {
-                        warn!(op = "lookup", part = %nsn.normalized, error = %e, "query failed");
-                        Outcome::Err(e.to_string())
-                    }
-                },
-                Err(e) => Outcome::Invalid(e.to_string()),
-            };
-            (idx, QueryResult { entry, outcome })
-        });
-        collect_sorted(futs, self.concurrency).await
-    }
 }
 
 async fn collect_sorted<T, I, F>(futs: I, concurrency: usize) -> Vec<QueryResult<T>>
@@ -223,13 +118,6 @@ where
         .await;
     collected.sort_by_key(|(i, _)| *i);
     collected.into_iter().map(|(_, r)| r).collect()
-}
-
-#[derive(Debug)]
-pub struct Combined {
-    pub government: GovernmentResult,
-    pub availability: Option<Availability>,
-    pub availability_error: Option<String>,
 }
 
 #[derive(Debug)]

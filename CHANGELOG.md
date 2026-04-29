@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- `government` subcommand and the underlying `soap::government` SOAP module — the upstream government-data endpoint does not return useful results.
+- `lookup` (combined) subcommand that chained government + availability calls.
+
+### Changed
+- **Breaking:** `availability` subcommand renamed to `lookup` (short alias `ls`). The old names `availability` and `avail` are kept as aliases for backward compatibility.
+- CLI description updated to reflect the single-operation focus.
+
 ## [0.2.3] — 2026-04-28
 
 ### Changed
