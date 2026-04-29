@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-04-29
+
+### Fixed
+- Release pipeline failed for v0.3.0: `wix/main.wxs` carried a hardcoded `Description='CLI to look up parts availability and government catalog data by NSN/NIIN'` that no longer matched `Cargo.toml` after the v0.3.0 description change. cargo-dist's `plan` step refuses out-of-date generated files. Description re-synced; v0.3.0 has no published binaries — use v0.3.1.
+
 ## [0.3.0] — 2026-04-29
 
 ### Removed
@@ -67,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded-concurrency query loop (default 4 in-flight, configurable).
 - GitHub Actions CI (fmt + clippy + test + release build) and opt-in pre-commit hook.
 
-[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.3.0...develop
+[Unreleased]: https://github.com/jchultarsky101/nsnfind/compare/v0.3.1...develop
+[0.3.1]: https://github.com/jchultarsky101/nsnfind/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jchultarsky101/nsnfind/compare/v0.2.1...v0.2.2
