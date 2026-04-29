@@ -10,10 +10,8 @@ use serde::Deserialize;
 use crate::error::IlsError;
 
 pub mod availability;
-pub mod government;
 
 pub const SERVICE_NS: &str = "http://namespace.ilsmart.com/v2";
-pub const MS_ARRAYS_NS: &str = "http://schemas.microsoft.com/2003/10/Serialization/Arrays";
 
 /// Escape the five XML special characters. Used for all user-provided values
 /// that are spliced into a request body.

@@ -12,13 +12,12 @@ use crate::config::{
 };
 use crate::nsn::{InputEntry, parse_nsn_list};
 use crate::output;
-use crate::soap::government::Dataset;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "nsnfind",
     version,
-    about = "Look up parts availability and government catalog data by NSN/NIIN"
+    about = "Look up parts availability by NSN/NIIN"
 )]
 pub struct Args {
     /// Path to the config file (TOML). Overrides $NSNFIND_CONFIG, ./nsnfind.toml,
@@ -37,17 +36,8 @@ pub struct Args {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Who is currently selling this NSN/NIIN?
-    #[command(alias = "parts", alias = "avail")]
-    Availability(CommonQueryArgs),
-
-    /// What does the US government catalog say about this NSN/NIIN?
-    #[command(alias = "gov", alias = "govdata")]
-    Government(GovernmentArgs),
-
-    /// Combined lookup: government catalog first, then marketplace suppliers
-    /// when the catalog indicates there are live listings.
-    #[command(alias = "check", alias = "all")]
-    Lookup(LookupArgs),
+    #[command(alias = "ls", alias = "availability", alias = "avail")]
+    Lookup(CommonQueryArgs),
 
     /// Manage the config file
     #[command(subcommand)]
@@ -68,49 +58,6 @@ pub struct CommonQueryArgs {
     /// Write output to this file instead of stdout.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
-}
-
-#[derive(Debug, clap::Args)]
-pub struct GovernmentArgs {
-    #[command(flatten)]
-    pub common: CommonQueryArgs,
-
-    /// Comma-separated government datasets to query.
-    /// Valid values: AMDF, CRF, DLA, ISDOD, ISUSAF, MCRL, MLC, MOE, MRIL, NHA, PH, TECH.
-    #[arg(
-        long,
-        value_name = "LIST",
-        default_value = "MCRL",
-        value_delimiter = ',',
-        value_parser = parse_dataset,
-    )]
-    pub datasets: Vec<Dataset>,
-}
-
-#[derive(Debug, clap::Args)]
-pub struct LookupArgs {
-    #[command(flatten)]
-    pub common: CommonQueryArgs,
-
-    /// Government datasets to query in the first call. Default: MCRL (enough to
-    /// retrieve ItemName, FSC, CAGE cross-reference, and the
-    /// HasPartsAvailability flag that gates the second call).
-    #[arg(
-        long,
-        value_name = "LIST",
-        default_value = "MCRL",
-        value_delimiter = ',',
-        value_parser = parse_dataset,
-    )]
-    pub gov_datasets: Vec<Dataset>,
-}
-
-fn parse_dataset(s: &str) -> Result<Dataset, String> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return Err("empty dataset value".to_owned());
-    }
-    Dataset::parse(trimmed).ok_or_else(|| format!("unknown dataset {trimmed:?}"))
 }
 
 #[derive(Debug, Subcommand)]
@@ -164,39 +111,19 @@ pub async fn run() -> Result<()> {
     init_tracing(args.verbose);
 
     match args.command {
-        Command::Availability(q) => run_availability(args.config.as_deref(), q).await,
-        Command::Government(g) => run_government(args.config.as_deref(), g).await,
-        Command::Lookup(l) => run_lookup(args.config.as_deref(), l).await,
+        Command::Lookup(q) => run_lookup(args.config.as_deref(), q).await,
         Command::Config(ConfigCommand::Path) => run_config_path(args.config.as_deref()),
         Command::Config(ConfigCommand::Show) => run_config_show(args.config.as_deref()),
         Command::Config(ConfigCommand::Set(s)) => run_config_set(args.config.as_deref(), s),
     }
 }
 
-async fn run_availability(config_path: Option<&Path>, args: CommonQueryArgs) -> Result<()> {
+async fn run_lookup(config_path: Option<&Path>, args: CommonQueryArgs) -> Result<()> {
     let (config, entries) = prepare(config_path, &args.input)?;
     let client = IlsClient::new(&config).context("failed to build HTTP client")?;
     let results = client.run_availability(entries).await;
     emit(&args, |w| {
         output::write_availability(args.format, &results, w)
-    })
-}
-
-async fn run_government(config_path: Option<&Path>, args: GovernmentArgs) -> Result<()> {
-    let (config, entries) = prepare(config_path, &args.common.input)?;
-    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
-    let results = client.run_government(entries, args.datasets.clone()).await;
-    emit(&args.common, |w| {
-        output::write_government(args.common.format, &results, w)
-    })
-}
-
-async fn run_lookup(config_path: Option<&Path>, args: LookupArgs) -> Result<()> {
-    let (config, entries) = prepare(config_path, &args.common.input)?;
-    let client = IlsClient::new(&config).context("failed to build HTTP client")?;
-    let results = client.run_lookup(entries, args.gov_datasets.clone()).await;
-    emit(&args.common, |w| {
-        output::write_combined(args.common.format, &results, w)
     })
 }
 
