@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='CLI to look up parts availability and government catalog data by NSN/NIIN'
+            Description='CLI to look up parts availability by NSN/NIIN'
             Manufacturer='Julian Chultarsky'
             InstallerVersion='450'
             Languages='1033'
